@@ -1,26 +1,27 @@
-require('dotenv').config();
+const express = require("express");
+const app = express();
 
-const { App } = require('@slack/bolt');
+app.use(express.json());
 
-const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
-  appToken: process.env.SLACK_APP_TOKEN,
-  socketMode: true
+// 動作確認
+app.get("/", (req, res) => {
+  res.send("OK");
 });
 
-app.message(async ({ message, say }) => {
-  // Bot自身の発言は無視
-  if (message.bot_id) return;
+// Slackイベント
+app.post("/slack/events", (req, res) => {
+  const body = req.body;
 
-  const text = (message.text || '').trim();
-  console.log("受信:", text);
-
-  if (text === 'おはよう') {
-    await say('こんにちは');
+  if (body?.type === "url_verification") {
+    return res.send(body.challenge);
   }
+
+  return res.status(200).send("ok");
 });
 
-(async () => {
-  await app.start();
-  console.log('Bot起動成功');
-})();
+// ⭐️ Render必須形
+const PORT = process.env.PORT;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Server running on", PORT);
+});
