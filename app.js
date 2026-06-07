@@ -1,26 +1,45 @@
 const express = require("express");
 const app = express();
 
+// ⭐️ 超重要：Slackはこれ必須
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// 動作確認
+// 動作確認用
 app.get("/", (req, res) => {
-  res.send("OK");
+  res.send("Slack bot is running 🚀");
 });
 
 // Slackイベント
 app.post("/slack/events", (req, res) => {
-  const body = req.body;
+  console.log("BODY:", req.body);
 
-  if (body?.type === "url_verification") {
-    return res.send(body.challenge);
+  try {
+    // URL検証
+    if (req.body && req.body.type === "url_verification") {
+      return res.status(200).send(req.body.challenge);
+    }
+
+    // イベント受信
+    if (req.body && req.body.type === "event_callback") {
+      const event = req.body.event;
+
+      if (event.text && event.text.includes("数学")) {
+        console.log("数学を検知");
+      }
+    }
+
+    // 必ず200返す
+    return res.status(200).send("ok");
+
+  } catch (e) {
+    console.error("ERROR:", e);
+
+    return res.status(200).send("error handled");
   }
-
-  return res.status(200).send("ok");
 });
 
-// ⭐️ Render必須形
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on", PORT);
