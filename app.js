@@ -10,11 +10,9 @@ app.get("/", (req, res) => {
 
 app.post("/slack/events", (req, res) => {
   console.log("===== EVENT RECEIVED =====");
-  console.log("headers:", req.headers);
-  console.log("body:", JSON.stringify(req.body, null, 2));
+  console.log(JSON.stringify(req.body, null, 2));
 
   if (req.body.type === "url_verification") {
-    console.log("challenge:", req.body.challenge);
     return res.status(200).type("text/plain").send(req.body.challenge);
   }
 
