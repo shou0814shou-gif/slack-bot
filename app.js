@@ -44,3 +44,10 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on", PORT);
 });
+
+app.post("/slack/events", (req, res) => {
+  console.log("===== EVENT RECEIVED =====");
+  console.log(JSON.stringify(req.body, null, 2));
+
+  return res.status(200).send("ok");
+});
