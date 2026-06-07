@@ -4,18 +4,25 @@ const app = express();
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("Slack bot is running 🚀");
+  console.log("GET / received");
+  res.send("Slack bot is running");
 });
 
 app.post("/slack/events", (req, res) => {
   console.log("===== EVENT RECEIVED =====");
-  console.log(JSON.stringify(req.body, null, 2));
+  console.log("headers:", req.headers);
+  console.log("body:", JSON.stringify(req.body, null, 2));
 
-  res.status(200).send("ok");
+  if (req.body.type === "url_verification") {
+    console.log("challenge:", req.body.challenge);
+    return res.status(200).type("text/plain").send(req.body.challenge);
+  }
+
+  return res.status(200).send("ok");
 });
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on ${PORT}`);
 });
