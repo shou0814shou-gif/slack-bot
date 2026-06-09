@@ -2,9 +2,9 @@
   "name": "slack-bot",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node app.js"
   },
   "keywords": [],
   "author": "",
@@ -12,6 +12,8 @@
   "type": "commonjs",
   "dependencies": {
     "@slack/bolt": "^4.7.3",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "pg": "^8.16.3"
   }
 }
