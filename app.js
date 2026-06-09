@@ -42,19 +42,19 @@ async function initDb() {
 }
 
 const subjectTeachers = {
-  "英語": ["真間", "大森", "細山", "莉望", "拓斗", "創詩"],
-  "国語": ["創詩", "中村", "大森", "細山", "莉望", "菅野", "三成"],
-  "数学": ["北村", "臼井", "難波", "西塚"],
-  "物理": ["西塚", "北村", "臼井", "難波"],
-  "化学": ["臼井", "難波", "西塚", "北村"],
-  "生物": ["濱田"],
-  "理科基礎": ["北村", "臼井", "難波", "西塚", "創詩", "宮内", "中村"],
-  "日本史": ["真間", "拓斗", "細山"],
-  "世界史": ["創詩", "大森"],
-  "政治経済": ["宮内"],
-  "地理": ["森"],
-  "倫理": ["細山"],
-  "情報": ["宮内", "難波"],
+  "\u82f1\u8a9e": ["\u771f\u9593", "\u5927\u68ee", "\u7d30\u5c71", "\u8389\u671b", "\u62d3\u6597", "\u5275\u8a69"],
+  "\u56fd\u8a9e": ["\u5275\u8a69", "\u4e2d\u6751", "\u5927\u68ee", "\u7d30\u5c71", "\u8389\u671b", "\u83c5\u91ce", "\u4e09\u6210"],
+  "\u6570\u5b66": ["\u5317\u6751", "\u81fc\u4e95", "\u96e3\u6ce2", "\u897f\u585a"],
+  "\u7269\u7406": ["\u897f\u585a", "\u5317\u6751", "\u81fc\u4e95", "\u96e3\u6ce2"],
+  "\u5316\u5b66": ["\u81fc\u4e95", "\u96e3\u6ce2", "\u897f\u585a", "\u5317\u6751"],
+  "\u751f\u7269": ["\u6ff1\u7530"],
+  "\u7406\u79d1\u57fa\u790e": ["\u5317\u6751", "\u81fc\u4e95", "\u96e3\u6ce2", "\u897f\u585a", "\u5275\u8a69", "\u5bae\u5185", "\u4e2d\u6751"],
+  "\u65e5\u672c\u53f2": ["\u771f\u9593", "\u62d3\u6597", "\u7d30\u5c71"],
+  "\u4e16\u754c\u53f2": ["\u5275\u8a69", "\u5927\u68ee"],
+  "\u653f\u6cbb\u7d4c\u6e08": ["\u5bae\u5185"],
+  "\u5730\u7406": ["\u68ee"],
+  "\u502b\u7406": ["\u7d30\u5c71"],
+  "\u60c5\u5831": ["\u5bae\u5185", "\u96e3\u6ce2"],
 };
 
 const subjects = Object.keys(subjectTeachers).sort((a, b) => b.length - a.length);
@@ -98,7 +98,7 @@ app.post("/slack/events", async (req, res) => {
 
 function verifySlackRequest(req) {
   if (!SLACK_SIGNING_SECRET) return true;
-  
+
   const timestamp = req.headers["x-slack-request-timestamp"];
   const signature = req.headers["x-slack-signature"];
   if (!timestamp || !signature) return false;
@@ -135,7 +135,7 @@ async function handleSlackEvent(body) {
   const channel = event.channel;
   const threadTs = event.thread_ts || event.ts;
 
-  if (event.thread_ts && text.includes("完了")) {
+  if (event.thread_ts && text.includes("\u5b8c\u4e86")) {
     await completeTask(channel, event.thread_ts);
     return;
   }
@@ -149,7 +149,7 @@ async function handleSlackEvent(body) {
     await postMessage({
       channel,
       thread_ts: threadTs,
-      text: `科目名が複数見つかりました: ${matchedSubjects.join("、")}\n1つの投稿に1科目だけ入れてください。`,
+      text: `\u79d1\u76ee\u540d\u304c\u8907\u6570\u898b\u3064\u304b\u308a\u307e\u3057\u305f: ${matchedSubjects.join("\u3001")}\n\u0031\u3064\u306e\u6295\u7a3f\u306b\u0031\u79d1\u76ee\u3060\u3051\u5165\u308c\u3066\u304f\u3060\u3055\u3044\u3002`,
     });
     return;
   }
@@ -196,143 +196,95 @@ async function assignTask(channel, threadTs, subject) {
     const active = await client.query(
       "SELECT teacher FROM tasks WHERE status = 'active'",
     );
-    thread_ts: threadTs,
-    text: `科目名が複数見つかりました: ${matchedSubjects.join("、")}\n1つの投稿に1科目だけ入れてください。`,
-  });
-  return;
-}
+    const activeTeachers = new Set(active.rows.map((row) => row.teacher));
+    const teacher = teachers.find((name) => !activeTeachers.has(name));
 
-await assignTask(channel, threadTs, matchedSubjects[0]);
-}
+    if (!teacher) {
+      await client.query("COMMIT");
+      await postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: `\u79d1\u76ee: ${subject}\n\u73fe\u5728\u3001\u62c5\u5f53\u53ef\u80fd\u306a\u5148\u751f\u304c\u5168\u54e1\u30bf\u30b9\u30af\u4e2d\u3067\u3059\u3002`,
+      });
+      return;
+    }
 
-async function markEventProcessed(eventId) {
-if (!eventId) return true;
+    await client.query(
+      `INSERT INTO tasks (thread_ts, channel_id, subject, teacher, status, assigned_at)
+       VALUES ($1, $2, $3, $4, 'active', NOW())`,
+      [threadTs, channel, subject, teacher],
+    );
 
-const result = await pool.query(
-  "INSERT INTO processed_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING",
-  [eventId],
-);
-return result.rowCount === 1;
-}
-
-function normalizeText(text) {
-return text.replace(/\s+/g, " ").trim();
-}
-
-function findSubjects(text) {
-return subjects.filter((subject) => text.includes(subject));
-}
-
-async function assignTask(channel, threadTs, subject) {
-const client = await pool.connect();
-
-try {
-  await client.query("BEGIN");
-
-  const existing = await client.query(
-    "SELECT subject, teacher, status FROM tasks WHERE thread_ts = $1 FOR UPDATE",
-    [threadTs],
-  );
-
-  if (existing.rowCount > 0) {
     await client.query("COMMIT");
-    console.log(`Task already exists for thread ${threadTs}`);
-    return;
-  }
 
-  const teachers = subjectTeachers[subject];
-  const active = await client.query(
-    "SELECT teacher FROM tasks WHERE status = 'active'",
-  );
-  const activeTeachers = new Set(active.rows.map((row) => row.teacher));
-  const teacher = teachers.find((name) => !activeTeachers.has(name));
-
-  if (!teacher) {
-    await client.query("COMMIT");
     await postMessage({
       channel,
       thread_ts: threadTs,
-      text: `科目: ${subject}\n現在、担当可能な先生が全員タスク中です。`,
+      text: `\u79d1\u76ee: ${subject}\n\u62c5\u5f53: ${teacher}\u5148\u751f`,
     });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function completeTask(channel, threadTs) {
+  const result = await pool.query(
+    `UPDATE tasks
+     SET status = 'completed', completed_at = NOW()
+     WHERE channel_id = $1 AND thread_ts = $2 AND status = 'active'
+     RETURNING subject, teacher`,
+    [channel, threadTs],
+  );
+
+  if (result.rowCount === 0) {
+    console.log(`No active task found for thread ${threadTs}`);
     return;
   }
 
-  await client.query(
-    `INSERT INTO tasks (thread_ts, channel_id, subject, teacher, status, assigned_at)
-     VALUES ($1, $2, $3, $4, 'active', NOW())`,
-    [threadTs, channel, subject, teacher],
-  );
-
-  await client.query("COMMIT");
+  const { subject, teacher } = result.rows[0];
 
   await postMessage({
     channel,
     thread_ts: threadTs,
-    text: `科目: ${subject}\n担当: ${teacher}先生`,
+    text: `${subject}\u306e\u5206\u6790\u30b7\u30fc\u30c8\u3092\u5b8c\u4e86\u3068\u3057\u3066\u8a18\u9332\u3057\u307e\u3057\u305f\u3002\n\u62c5\u5f53: ${teacher}\u5148\u751f`,
   });
-} catch (error) {
-  await client.query("ROLLBACK");
-  throw error;
-} finally {
-  client.release();
-}
-}
 
-async function completeTask(channel, threadTs) {
-const result = await pool.query(
-  `UPDATE tasks
-   SET status = 'completed', completed_at = NOW()
-   WHERE channel_id = $1 AND thread_ts = $2 AND status = 'active'
-   RETURNING subject, teacher`,
-  [channel, threadTs],
-);
-
-if (result.rowCount === 0) {
-  console.log(`No active task found for thread ${threadTs}`);
-  return;
-}
-
-const { subject, teacher } = result.rows[0];
-
-await postMessage({
-  channel,
-  thread_ts: threadTs,
-  text: `${subject}の分析シートを完了として記録しました。\n担当: ${teacher}先生`,
-});
-
-await postMessage({
-  channel,
-  text: `${subject}の分析シートが完了しました。\n担当: ${teacher}先生`,
-});
+  await postMessage({
+    channel,
+    text: `${subject}\u306e\u5206\u6790\u30b7\u30fc\u30c8\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002\n\u62c5\u5f53: ${teacher}\u5148\u751f`,
+  });
 }
 
 async function postMessage(payload) {
-const response = await fetch("https://slack.com/api/chat.postMessage", {
-  method: "POST",
-  headers: {
-    "Authorization": `Bearer ${SLACK_BOT_TOKEN}`,
-    "Content-Type": "application/json; charset=utf-8",
-  },
-  body: JSON.stringify(payload),
-});
+  const response = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify(payload),
+  });
 
-const data = await response.json();
-if (!data.ok) {
-  throw new Error(`Slack chat.postMessage failed: ${data.error}`);
-}
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(`Slack chat.postMessage failed: ${data.error}`);
+  }
 
-return data;
+  return data;
 }
 
 const PORT = process.env.PORT || 3000;
 
 initDb()
-.then(() => {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on ${PORT}`);
+  .then(() => {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error("Failed to initialize database:", error);
+    process.exit(1);
   });
-})
-.catch((error) => {
-  console.error("Failed to initialize database:", error);
-  process.exit(1);
-});
