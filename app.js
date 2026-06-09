@@ -34,6 +34,12 @@ async function initDb() {
       completed_at TIMESTAMPTZ
     );
 
+    CREATE TABLE IF NOT EXISTS assignment_cursors (
+      subject TEXT PRIMARY KEY,
+      next_index INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_status_teacher ON tasks (status, teacher);
     CREATE INDEX IF NOT EXISTS idx_tasks_channel_thread ON tasks (channel_id, thread_ts);
   `);
@@ -197,9 +203,17 @@ async function assignTask(channel, threadTs, subject) {
       "SELECT teacher FROM tasks WHERE status = 'active'",
     );
     const activeTeachers = new Set(active.rows.map((row) => row.teacher));
-    const teacher = teachers.find((name) => !activeTeachers.has(name));
+    const cursorResult = await client.query(
+      `INSERT INTO assignment_cursors (subject, next_index)
+       VALUES ($1, 0)
+       ON CONFLICT (subject) DO UPDATE SET subject = EXCLUDED.subject
+       RETURNING next_index`,
+      [subject],
+    );
+    const startIndex = cursorResult.rows[0].next_index % teachers.length;
+    const assignment = findNextAvailableTeacher(teachers, activeTeachers, startIndex);
 
-    if (!teacher) {
+    if (!assignment) {
       await client.query("COMMIT");
       await postMessage({
         channel,
@@ -209,10 +223,20 @@ async function assignTask(channel, threadTs, subject) {
       return;
     }
 
+    const { teacher, index } = assignment;
+    const nextIndex = (index + 1) % teachers.length;
+
     await client.query(
       `INSERT INTO tasks (thread_ts, channel_id, subject, teacher, status, assigned_at)
        VALUES ($1, $2, $3, $4, 'active', NOW())`,
       [threadTs, channel, subject, teacher],
+    );
+
+    await client.query(
+      `UPDATE assignment_cursors
+       SET next_index = $2, updated_at = NOW()
+       WHERE subject = $1`,
+      [subject, nextIndex],
     );
 
     await client.query("COMMIT");
@@ -228,6 +252,18 @@ async function assignTask(channel, threadTs, subject) {
   } finally {
     client.release();
   }
+}
+
+function findNextAvailableTeacher(teachers, activeTeachers, startIndex) {
+  for (let offset = 0; offset < teachers.length; offset += 1) {
+    const index = (startIndex + offset) % teachers.length;
+    const teacher = teachers[index];
+    if (!activeTeachers.has(teacher)) {
+      return { teacher, index };
+    }
+  }
+
+  return null;
 }
 
 async function completeTask(channel, threadTs) {
