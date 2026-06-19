@@ -155,7 +155,7 @@ async function handleSlackEvent(body) {
     await postMessage({
       channel,
       thread_ts: threadTs,
-      text: `\u79d1\u76ee\u540d\u304c\u8907\u6570\u898b\u3064\u304b\u308a\u307e\u3057\u305f: ${matchedSubjects.join("\u3001")}\n\u0031\u3064\u306e\u6295\u7a3f\u306b\u0031\u79d1\u76ee\u3060\u3051\u5165\u308c\u3066\u304f\u3060\u3055\u3044\u3002`,
+      text: `\u79d1\u76ee\u540d\u304c\u8907\u6570\u898b\u3064\u304b\u308a\u307e\u3057\u305f: ${matchedSubjects.join("\u3001")}\n\u0031\u3064\u306e\u6295\u7a3f\u306b\u0031\u79d1\u76ee\u3060\u3051\\[...]`
     });
     return;
   }
@@ -282,15 +282,11 @@ async function completeTask(channel, threadTs) {
 
   const { subject, teacher } = result.rows[0];
 
+  // スレッド内にのみ完了メッセージを投稿する（チャンネル全体への投稿は削除）
   await postMessage({
     channel,
     thread_ts: threadTs,
     text: `${subject}\u306e\u5206\u6790\u30b7\u30fc\u30c8\u3092\u5b8c\u4e86\u3068\u3057\u3066\u8a18\u9332\u3057\u307e\u3057\u305f\u3002\n\u62c5\u5f53: ${teacher}\u5148\u751f`,
-  });
-
-  await postMessage({
-    channel,
-    text: `${subject}\u306e\u5206\u6790\u30b7\u30fc\u30c8\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002\n\u62c5\u5f53: ${teacher}\u5148\u751f`,
   });
 }
 
