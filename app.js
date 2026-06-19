@@ -44,23 +44,47 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_tasks_channel_thread ON tasks (channel_id, thread_ts);
   `);
 
+  // Ensure due_at column exists for tasks (migration for existing DBs)
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ`);
+
   console.log("Database initialized");
 }
 
+// Updated teacher list (names to be mentionable with @name in messages)
+const TEACHERS = [
+  "北村秀平",
+  "中村創詩",
+  "大森悠太",
+  "細山杏咲",
+  "西塚遥香",
+  "三成ひなた",
+  "菅野瑠衣",
+  "宮内煌生",
+  "真間咲也子",
+  "飯尾拓斗",
+  "臼井海斗",
+  "森 聖羽",
+  "中村澪",
+  "中村莉望",
+  "濱田綺音",
+  "難波昇大",
+];
+
+// Map every subject to the above teachers (use same pool for all subjects)
 const subjectTeachers = {
-  "\u82f1\u8a9e": ["\u771f\u9593", "\u5927\u68ee", "\u7d30\u5c71", "\u8389\u671b", "\u62d3\u6597", "\u5275\u8a69"],
-  "\u56fd\u8a9e": ["\u5275\u8a69", "\u4e2d\u6751", "\u5927\u68ee", "\u7d30\u5c71", "\u8389\u671b", "\u83c5\u91ce", "\u4e09\u6210"],
-  "\u6570\u5b66": ["\u5317\u6751", "\u81fc\u4e95", "\u96e3\u6ce2", "\u897f\u585a"],
-  "\u7269\u7406": ["\u897f\u585a", "\u5317\u6751", "\u81fc\u4e95", "\u96e3\u6ce2"],
-  "\u5316\u5b66": ["\u81fc\u4e95", "\u96e3\u6ce2", "\u897f\u585a", "\u5317\u6751"],
-  "\u751f\u7269": ["\u6ff1\u7530"],
-  "\u7406\u79d1\u57fa\u790e": ["\u5317\u6751", "\u81fc\u4e95", "\u96e3\u6ce2", "\u897f\u585a", "\u5275\u8a69", "\u5bae\u5185", "\u4e2d\u6751"],
-  "\u65e5\u672c\u53f2": ["\u771f\u9593", "\u62d3\u6597", "\u7d30\u5c71"],
-  "\u4e16\u754c\u53f2": ["\u5275\u8a69", "\u5927\u68ee"],
-  "\u653f\u6c11\u7d4c\u6e08": ["\u5bae\u5185"],
-  "\u5730\u7406": ["\u68ee"],
-  "\u502b\u7406": ["\u7d30\u5c71"],
-  "\u60c5\u5831": ["\u5bae\u5185", "\u96e3\u6ce2"],
+  "英語": TEACHERS,
+  "国語": TEACHERS,
+  "数学": TEACHERS,
+  "物理": TEACHERS,
+  "化学": TEACHERS,
+  "生物": TEACHERS,
+  "理科基礎": TEACHERS,
+  "日本史": TEACHERS,
+  "世界史": TEACHERS,
+  "政治経済": TEACHERS,
+  "地理": TEACHERS,
+  "倫理": TEACHERS,
+  "情報": TEACHERS,
 };
 
 const subjects = Object.keys(subjectTeachers).sort((a, b) => b.length - a.length);
@@ -136,12 +160,17 @@ async function handleSlackEvent(body) {
   if (event.bot_id || event.subtype === "bot_message") return;
 
   const text = normalizeText(event.text || "");
-  if (!text) return;
+  if (!text && !(event.files && event.files.length)) return;
 
   const channel = event.channel;
   const threadTs = event.thread_ts || event.ts;
 
-  if (event.thread_ts && text.includes("\u5b8c\u4e86")) {
+  // Completion detection: when a PDF file is posted in the thread
+  if (event.thread_ts && event.files && event.files.some(f => {
+    const mime = (f.mimetype || "").toLowerCase();
+    const filetype = (f.filetype || "").toLowerCase();
+    return mime === "application/pdf" || filetype === "pdf";
+  })) {
     await completeTask(channel, event.thread_ts);
     return;
   }
@@ -155,7 +184,7 @@ async function handleSlackEvent(body) {
     await postMessage({
       channel,
       thread_ts: threadTs,
-      text: `\u79d1\u76ee\u540d\u304c\u8907\u6570\u898b\u3064\u304b\u308a\u307e\u3057\u305f: ${matchedSubjects.join("\u3001")}\n\u0031\u3064\u306e\u6295\u7a3f\u306b\u0031\u79d1\u76ee\u3060\u3051\\[...]`
+      text: `科目名が複数見つかりました: ${matchedSubjects.join("、")}\n1つの投稿に1科目だけ[...]`
     });
     return;
   }
@@ -213,24 +242,54 @@ async function assignTask(channel, threadTs, subject) {
     const startIndex = cursorResult.rows[0].next_index % teachers.length;
     const assignment = findNextAvailableTeacher(teachers, activeTeachers, startIndex);
 
-    if (!assignment) {
-      await client.query("COMMIT");
-      await postMessage({
-        channel,
-        thread_ts: threadTs,
-        text: `\u79d1\u76ee: ${subject}\n\u73fe\u5728\u3001\u62c5\u5f53\u53ef\u80fd\u306a\u5148\u751f\u304c\u5168\u54e1\u30bf\u30b9\u30af\u4e2d\u3067\u3059\u3002`,
-      });
-      return;
+    let teacherToAssign;
+    let assignedIndex = null;
+
+    if (assignment) {
+      teacherToAssign = assignment.teacher;
+      assignedIndex = assignment.index;
+    } else {
+      // All teachers are active. Assign to the teacher who was assigned first (oldest assigned_at)
+      const oldestRes = await client.query(
+        `SELECT teacher, MIN(assigned_at) AS first_assigned
+         FROM tasks
+         WHERE status = 'active' AND teacher = ANY($1)
+         GROUP BY teacher
+         ORDER BY MIN(assigned_at) ASC
+         LIMIT 1`,
+        [teachers],
+      );
+
+      if (oldestRes.rowCount > 0) {
+        teacherToAssign = oldestRes.rows[0].teacher;
+        // assignedIndex remains null; we'll still advance the cursor below
+      } else {
+        // Fallback: shouldn't happen, but if no active tasks found, post message
+        await client.query("COMMIT");
+        await postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: `科目: ${subject}\n現在、担当可能な先生が見つかりません。`,
+        });
+        return;
+      }
     }
 
-    const { teacher, index } = assignment;
-    const nextIndex = (index + 1) % teachers.length;
+    // Compute due date: if assigned at 22:00 or later => +8 days, else +7 days
+    const now = new Date();
+    const hour = now.getHours();
+    const daysToAdd = hour >= 22 ? 8 : 7;
+    const dueDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
 
+    // Insert task with due_at
     await client.query(
-      `INSERT INTO tasks (thread_ts, channel_id, subject, teacher, status, assigned_at)
-       VALUES ($1, $2, $3, $4, 'active', NOW())`,
-      [threadTs, channel, subject, teacher],
+      `INSERT INTO tasks (thread_ts, channel_id, subject, teacher, status, assigned_at, due_at)
+       VALUES ($1, $2, $3, $4, 'active', NOW(), $5)`,
+      [threadTs, channel, subject, teacherToAssign, dueDate],
     );
+
+    // Advance cursor if we had an assignment index
+    const nextIndex = (assignedIndex !== null) ? (assignedIndex + 1) % teachers.length : (startIndex + 1) % teachers.length;
 
     await client.query(
       `UPDATE assignment_cursors
@@ -241,10 +300,12 @@ async function assignTask(channel, threadTs, subject) {
 
     await client.query("COMMIT");
 
+    // Post assignment message in thread only, with @mention-style name and due date
+    const dueDateStr = dueDate.toISOString().split('T')[0];
     await postMessage({
       channel,
       thread_ts: threadTs,
-      text: `\u79d1\u76ee: ${subject}\n\u62c5\u5f53: ${teacher}\u5148\u751f`,
+      text: `科目: ${subject}\n担当: @${teacherToAssign}\n期限: ${dueDateStr}`,
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -282,11 +343,10 @@ async function completeTask(channel, threadTs) {
 
   const { subject, teacher } = result.rows[0];
 
-  // スレッド内にのみ完了メッセージを投稿する（チャンネル全体への投稿は削除）
   await postMessage({
     channel,
     thread_ts: threadTs,
-    text: `${subject}\u306e\u5206\u6790\u30b7\u30fc\u30c8\u3092\u5b8c\u4e86\u3068\u3057\u3066\u8a18\u9332\u3057\u307e\u3057\u305f\u3002\n\u62c5\u5f53: ${teacher}\u5148\u751f`,
+    text: `${subject}の分析シートを完了として記録しました。\n担当: @${teacher}`,
   });
 }
 
