@@ -70,6 +70,25 @@ const TEACHERS = [
   "難波昇大",
 ];
 
+// Slack user ID mapping you provided. Use these to make real @mentions (<@U...>)
+const TEACHER_IDS = {
+  "真間咲也子": "U0APQ35UAF6",
+  "大森悠太": "U0AP53C4G79",
+  "細山杏咲": "U0APFUYTAE6",
+  "菅野瑠衣": "U0APGF2UPKM",
+  "飯尾拓斗": "U0APH6WA41K",
+  "中村創詩": "U0APHQR0S4A",
+  "中村澪": "U0AP5FYKP1D",
+  "三成ひなた": "U0APWQ10RPB",
+  "難波昇大": "U0APX669K0E",
+  "北村秀平": "U0AN7045G1L",
+  "臼井海斗": "U0APFULA48J",
+  "西塚遥香": "U0APKDPSZU5",
+  "濱田綺音": "U0APFQ5T1QA",
+  "宮内煌生": "U0APF269UHY",
+  "森 聖羽": "U0APHR40G3Z",
+};
+
 // Map every subject to the above teachers (use same pool for all subjects)
 const subjectTeachers = {
   "英語": TEACHERS,
@@ -300,12 +319,13 @@ async function assignTask(channel, threadTs, subject) {
 
     await client.query("COMMIT");
 
-    // Post assignment message in thread only, with @mention-style name and due date
+    // Post assignment message in thread only, with @mention-style Slack ID if available and due date
     const dueDateStr = dueDate.toISOString().split('T')[0];
+    const mention = TEACHER_IDS[teacherToAssign] ? `<@${TEACHER_IDS[teacherToAssign]}>` : `@${teacherToAssign}`;
     await postMessage({
       channel,
       thread_ts: threadTs,
-      text: `科目: ${subject}\n担当: @${teacherToAssign}\n期限: ${dueDateStr}`,
+      text: `科目: ${subject}\n担当: ${mention}\n期限: ${dueDateStr}`,
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -342,11 +362,12 @@ async function completeTask(channel, threadTs) {
   }
 
   const { subject, teacher } = result.rows[0];
+  const mention = TEACHER_IDS[teacher] ? `<@${TEACHER_IDS[teacher]}>` : `@${teacher}`;
 
   await postMessage({
     channel,
     thread_ts: threadTs,
-    text: `${subject}の分析シートを完了として記録しました。\n担当: @${teacher}`,
+    text: `${subject}の分析シートを完了として記録しました。\n担当: ${mention}`,
   });
 }
 
