@@ -7,10 +7,12 @@ const app = express();
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
 const DATABASE_URL = process.env.DATABASE_URL;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
 if (!SLACK_BOT_TOKEN) console.warn("SLACK_BOT_TOKEN is not set");
 if (!SLACK_SIGNING_SECRET) console.warn("SLACK_SIGNING_SECRET is not set");
 if (!DATABASE_URL) console.warn("DATABASE_URL is not set");
+if (!ADMIN_TOKEN) console.warn("ADMIN_TOKEN is not set");
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -105,6 +107,97 @@ app.use(express.json({
 app.get("/", (req, res) => {
   console.log("GET / received");
   res.send("Slack bot is running");
+});
+
+// Admin middleware
+function verifyAdminToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Missing or invalid authorization header" });
+  }
+
+  const token = authHeader.slice(7);
+  if (token !== ADMIN_TOKEN) {
+    return res.status(403).json({ error: "Invalid admin token" });
+  }
+
+  next();
+}
+
+// Admin endpoint: add task
+app.post("/admin/add-task", verifyAdminToken, async (req, res) => {
+  console.log("===== ADMIN ADD-TASK REQUEST =====");
+  console.log(JSON.stringify(req.body, null, 2));
+
+  const { thread_ts, channel_id, subject, teacher, days_to_add } = req.body;
+
+  // Validate required fields
+  if (!thread_ts || !channel_id || !subject || !teacher) {
+    return res.status(400).json({
+      error: "Missing required fields: thread_ts, channel_id, subject, teacher"
+    });
+  }
+
+  // Validate subject exists
+  if (!subjectTeachers[subject]) {
+    return res.status(400).json({
+      error: `Unknown subject: ${subject}. Valid subjects: ${Object.keys(subjectTeachers).join(", ")}`
+    });
+  }
+
+  // Validate teacher is in subject roster
+  if (!subjectTeachers[subject].includes(teacher)) {
+    return res.status(400).json({
+      error: `Teacher ${teacher} is not assigned to subject ${subject}. Valid teachers: ${subjectTeachers[subject].join(", ")}`
+    });
+  }
+
+  try {
+    // Check if task already exists
+    const existing = await pool.query(
+      "SELECT * FROM tasks WHERE thread_ts = $1 AND channel_id = $2",
+      [thread_ts, channel_id],
+    );
+
+    if (existing.rowCount > 0) {
+      return res.status(409).json({
+        error: "Task already exists for this thread",
+        existing: existing.rows[0],
+      });
+    }
+
+    // Compute due date
+    const now = new Date();
+    const daysToAdd = days_to_add || 7;
+    const dueDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+
+    // Insert task
+    await pool.query(
+      `INSERT INTO tasks (thread_ts, channel_id, subject, teacher, status, assigned_at, due_at)
+       VALUES ($1, $2, $3, $4, 'active', NOW(), $5)`,
+      [thread_ts, channel_id, subject, teacher, dueDate],
+    );
+
+    const dueDateStr = dueDate.toISOString().split('T')[0];
+    res.status(201).json({
+      success: true,
+      message: "Task added successfully",
+      task: {
+        thread_ts,
+        channel_id,
+        subject,
+        teacher,
+        status: "active",
+        assigned_at: new Date().toISOString(),
+        due_at: dueDate.toISOString(),
+      },
+    });
+
+    console.log(`Task added: ${subject} -> ${teacher} (due: ${dueDateStr})`);
+  } catch (error) {
+    console.error("Failed to add task:", error);
+    res.status(500).json({ error: "Failed to add task", details: error.message });
+  }
 });
 
 app.post("/slack/events", async (req, res) => {
