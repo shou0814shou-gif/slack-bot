@@ -184,17 +184,27 @@ async function handleSlackEvent(body) {
   const channel = event.channel;
   const threadTs = event.thread_ts || event.ts;
 
-  // Completion detection: when a PDF file is posted in the thread
-  if (event.thread_ts && event.files && event.files.some(f => {
-    const mime = (f.mimetype || "").toLowerCase();
-    const filetype = (f.filetype || "").toLowerCase();
-    return mime === "application/pdf" || filetype === "pdf";
-  })) {
-    await completeTask(channel, event.thread_ts);
+  // Completion detection: either when a PDF file is posted in the thread OR when "完了" text is sent
+  if (event.thread_ts) {
+    // Check for PDF file
+    if (event.files && event.files.some(f => {
+      const mime = (f.mimetype || "").toLowerCase();
+      const filetype = (f.filetype || "").toLowerCase();
+      return mime === "application/pdf" || filetype === "pdf";
+    })) {
+      await completeTask(channel, event.thread_ts);
+      return;
+    }
+
+    // Check for "完了" text
+    if (text.includes("完了")) {
+      await completeTask(channel, event.thread_ts);
+      return;
+    }
+
+    // If in thread but not completion trigger, ignore
     return;
   }
-
-  if (event.thread_ts) return;
 
   const matchedSubjects = findSubjects(text);
   if (matchedSubjects.length === 0) return;
