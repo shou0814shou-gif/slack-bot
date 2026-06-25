@@ -67,7 +67,7 @@ const TEACHER_IDS = {
   "濱田綺音": "U0APFQ5T1QA",
   "宮内煌生": "U0APF269UHY",
   "森 聖羽": "U0APHR40G3Z",
-  "中村莉望": "UNKNOWN", // Add ID if available
+  "中村莉望": "U0APVSN0Q2Z",
 };
 
 // Subject to teachers mapping
