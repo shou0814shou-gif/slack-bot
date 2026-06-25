@@ -50,27 +50,7 @@ async function initDb() {
   console.log("Database initialized");
 }
 
-// Updated teacher list (names to be mentionable with @name in messages)
-const TEACHERS = [
-  "北村秀平",
-  "中村創詩",
-  "大森悠太",
-  "細山杏咲",
-  "西塚遥香",
-  "三成ひなた",
-  "菅野瑠衣",
-  "宮内煌生",
-  "真間咲也子",
-  "飯尾拓斗",
-  "臼井海斗",
-  "森 聖羽",
-  "中村澪",
-  "中村莉望",
-  "濱田綺音",
-  "難波昇大",
-];
-
-// Slack user ID mapping you provided. Use these to make real @mentions (<@U...>)
+// Slack user ID mapping
 const TEACHER_IDS = {
   "真間咲也子": "U0APQ35UAF6",
   "大森悠太": "U0AP53C4G79",
@@ -87,23 +67,26 @@ const TEACHER_IDS = {
   "濱田綺音": "U0APFQ5T1QA",
   "宮内煌生": "U0APF269UHY",
   "森 聖羽": "U0APHR40G3Z",
+  "中村莉望": "UNKNOWN", // Add ID if available
 };
 
-// Map every subject to the above teachers (use same pool for all subjects)
+// Subject to teachers mapping
 const subjectTeachers = {
-  "英語": TEACHERS,
-  "国語": TEACHERS,
-  "数学": TEACHERS,
-  "物理": TEACHERS,
-  "化学": TEACHERS,
-  "生物": TEACHERS,
-  "理科基礎": TEACHERS,
-  "日本史": TEACHERS,
-  "世界史": TEACHERS,
-  "政治経済": TEACHERS,
-  "地理": TEACHERS,
-  "倫理": TEACHERS,
-  "情報": TEACHERS,
+  "英語": ["真間咲也子", "大森悠太", "細山杏咲", "中村莉望", "飯尾拓斗", "中村創詩"],
+  "国語": ["中村創詩", "中村澪", "大森悠太", "細山杏咲", "中村莉望", "菅野瑠衣", "三成ひなた"],
+  "数学": ["北村秀平", "難波昇大", "西塚遥香", "臼井海斗"],
+  "物理": ["北村秀平", "難波昇大", "西塚遥香", "臼井海斗"],
+  "化学": ["難波昇大", "西塚遥香", "臼井海斗"],
+  "生物": ["濱田綺音"],
+  "物理基礎": ["難波昇大", "西塚遥香", "臼井海斗", "北村秀平"],
+  "化学基礎": ["難波昇大", "西塚遥香", "臼井海斗", "中村創詩"],
+  "生物基礎": ["中村創詩", "濱田綺音"],
+  "日本史": ["真間咲也子", "飯尾拓斗", "細山杏咲"],
+  "世界史": ["大森悠太", "中村創詩", "中村澪"],
+  "政治経済": ["宮内煌生"],
+  "地理": ["森 聖羽"],
+  "倫理": ["細山杏咲"],
+  "情報": ["宮内煌生", "難波昇大"],
 };
 
 const subjects = Object.keys(subjectTeachers).sort((a, b) => b.length - a.length);
